@@ -1,4 +1,4 @@
-import os, sys, time
+import os, sys, time, re
 import customtkinter as ctk
 from tkinter import messagebox
 from mutagen import File as MutagenFile
@@ -8,7 +8,7 @@ APP_TITLE = "BreathSync"
 SEARCH_DIR = "rhythms"
 BACKING_DIR = "backing"
 POLL_MS = 150
-WINDOW_W, WINDOW_H = 800, 700
+WINDOW_W, WINDOW_H = 900, 750
 
 class Rhythm:
     def __init__(self, path):
@@ -56,8 +56,9 @@ class TrackRow(ctk.CTkFrame):
         self.selected = selected
         self.grid_rowconfigure(2, weight=1)
         self.grid_columnconfigure(0, weight=1)
-        self.title = ctk.CTkLabel(self, text=rhythm.name, font=("Segoe UI", 13, "bold"))
-        self.meta = ctk.CTkLabel(self, text=self._fmt_meta(), text_color="#9aa4b2", font=("Segoe UI", 16, "bold"))
+        root = self.winfo_toplevel()
+        self.title = ctk.CTkLabel(self, text=rhythm.name, font=root.ui_font_bold)
+        self.meta = ctk.CTkLabel(self, text=self._fmt_meta(), text_color="#9aa4b2", font=root.ui_font_md_bold)
         self.pb = ctk.CTkProgressBar(self, height=10, corner_radius=8, progress_color="#5aa3ff")
         self.title.grid(row=0, column=0, sticky="w", padx=16, pady=(12, 0))
         self.meta.grid(row=1, column=0, sticky="w", padx=16, pady=(2, 8))
@@ -102,9 +103,10 @@ class TrackRow(ctk.CTkFrame):
 
 class BackingRow(ctk.CTkFrame):
     def __init__(self, master, name, on_volume):
-        super().__init__(master, fg_color="#14171c", corner_radius=12)
-        self.label = ctk.CTkLabel(self, text=name, font=("Segoe UI", 12, "bold"))
-        self.val_label = ctk.CTkLabel(self, text="50%", text_color="#9aa4b2", font=("Segoe UI", 12))
+        super().__init__(master, fg_color="#3b414d", corner_radius=12)
+        root = self.winfo_toplevel()
+        self.label = ctk.CTkLabel(self, text=name, font=root.ui_font_small_bold)
+        self.val_label = ctk.CTkLabel(self, text="50%", text_color="#9aa4b2", font=root.ui_font_small)
         self.slider = ctk.CTkSlider(self, from_=0.0, to=1.0, number_of_steps=100, command=self._changed, height=14, corner_radius=8)
         self.on_volume = on_volume
         self.slider.set(0.5)
@@ -125,6 +127,7 @@ class App(ctk.CTk):
         self.title(APP_TITLE)
         self.geometry(f"{WINDOW_W}x{WINDOW_H}")
         self.minsize(WINDOW_W, WINDOW_H)
+        self.after(0, lambda: self.state("zoomed"))
         self.fullscreen = False
         self.fade_secs = 3.0
         self._audio_init()
@@ -141,27 +144,47 @@ class App(ctk.CTk):
         self.wrapper = ctk.CTkFrame(self, fg_color="transparent")
         self.wrapper.pack(fill="both", expand=True)
         self.content = ctk.CTkFrame(self.wrapper, fg_color="transparent", width=WINDOW_W, height=WINDOW_H)
-        self.content.pack_propagate(True)
+        self.content.pack_propagate(False)
         self.content.place(relx=0.5, rely=0.5, anchor="center")
+
+        font_path = os.path.join(self._base_folder(), "assets", "fonts", "Asimovian-Regular.ttf")
+        self.brand_font = self._load_brand_font(font_path, "Asimovian", 32, "bold")
+
+        mono_path = os.path.join(self._base_folder(), "assets", "fonts", "Roboto_Mono", "RobotoMono-VariableFont_wght.ttf")
+        self._register_font(mono_path)
+        self.ui_font = ctk.CTkFont(family="Roboto Mono", size=13)
+        self.ui_font_bold = ctk.CTkFont(family="Roboto Mono", size=13, weight="bold")
+        self.ui_font_small = ctk.CTkFont(family="Roboto Mono", size=12)
+        self.ui_font_small_bold = ctk.CTkFont(family="Roboto Mono", size=12, weight="bold")
+        self.ui_font_md_bold = ctk.CTkFont(family="Roboto Mono", size=16, weight="bold")
+        self.ui_font_h2_bold = ctk.CTkFont(family="Roboto Mono", size=18, weight="bold")
+        self.ui_font_section_bold = ctk.CTkFont(family="Roboto Mono", size=20, weight="bold")
 
         topbar = ctk.CTkFrame(self.content, fg_color="transparent")
         topbar.pack(fill="x", padx=16, pady=(8,4))
-        self.header = ctk.CTkLabel(topbar, text="BreathSync • Rhythms", font=("Segoe UI", 23, "bold"))
-        self.header.pack(side="left")
-        self.fs_btn = ctk.CTkButton(topbar, text="⛶", width=40, command=self._toggle_fullscreen)
-        self.fs_btn.pack(side="right", padx=(8,0))
-        self.fade_label = ctk.CTkLabel(topbar, text="Fade (3s)")
-        self.fade_label.pack(side="right", padx=8)
-        self.fade_slider = ctk.CTkSlider(topbar, from_=1, to=9, number_of_steps=8, command=self._fade_changed)
-        self.fade_slider.set(3)
+        topbar.grid_columnconfigure(0, weight=1)
+        topbar.grid_columnconfigure(1, weight=0)
 
-        self.fade_slider.pack(side="right", padx=8, ipadx=40)
+        self.brand_label = ctk.CTkLabel(topbar, text="BreathSync", font=self.brand_font)
+        self.brand_label.grid(row=0, column=0, sticky="w")
+
+        self.section_label = ctk.CTkLabel(topbar, text="Rhythms", font=self.ui_font_section_bold)
+        self.section_label.grid(row=1, column=0, sticky="w", pady=(6,0))
+
+        fader = ctk.CTkFrame(topbar, fg_color="transparent")
+        fader.grid(row=1, column=1, sticky="e", pady=(6,0))
+        self.fade_label = ctk.CTkLabel(fader, text="Fade (3s)", font=self.ui_font)
+        self.fade_label.pack(side="left", padx=(0,8))
+        self.fade_slider = ctk.CTkSlider(fader, from_=1, to=9, number_of_steps=8, command=self._fade_changed)
+        self.fade_slider.set(3)
+        self.fade_slider.pack(side="left", ipadx=40)
 
         self.list_container = ctk.CTkFrame(self.content, fg_color="transparent")
         self.list_container.pack(fill="x", padx=16)
         self.rows = []
         for i, r in enumerate(self.rhythms):
             row = TrackRow(self.list_container, r, on_select=self._on_row_select, on_seek=self._on_seek_request, selected=(i == 0))
+            row.title.configure(text=f"Rhythm {i+1}")
             row.pack(fill="x", pady=6)
             self.rows.append(row)
         for rw in self.rows:
@@ -170,10 +193,21 @@ class App(ctk.CTk):
 
         self.controls = ctk.CTkFrame(self.content, fg_color="transparent")
         self.controls.pack(fill="x", padx=16, pady=6)
-        self.play_btn = ctk.CTkButton(self.controls, text="Play", width=180, height=40, corner_radius=20, font=("Segoe UI",16,"bold"), command=self._toggle)
+        self.play_btn = ctk.CTkButton(
+            self.controls,
+            text="Play",
+            width=180,
+            height=40,
+            corner_radius=20,
+            font=self.ui_font_md_bold,
+            command=self._toggle,
+            fg_color="#5e1eff",
+            hover_color="#420b82",
+            text_color="#ffffff"
+        )
         self.play_btn.pack(pady=8)
 
-        self.backing_header = ctk.CTkLabel(self.content, text="Backing Tracks", font=("Segoe UI", 18, "bold"))
+        self.backing_header = ctk.CTkLabel(self.content, text="Backing Tracks", font=self.ui_font_h2_bold)
         self.backing_header.pack(anchor="w", padx=20, pady=(6, 0))
         self.backing_container = ctk.CTkFrame(self.content, fg_color="transparent")
         self.backing_container.pack(fill="x", padx=16, pady=(4, 12))
@@ -187,25 +221,61 @@ class App(ctk.CTk):
 
         self._apply_initial_backing_volumes()
         self._load_current_into_mixer()
+        self.bind("<F11>", lambda e: self._toggle_fullscreen())
+        self.bind("<Escape>", self._exit_fullscreen)
+        self.bind_all("<space>", self._on_space)
         self.after(POLL_MS, self._tick)
+        self.after(0, self._apply_windowed_layout)
+
+    def _load_brand_font(self, path, family_hint, size, weight):
+        try:
+            self.tk.call('font', 'create', 'BrandFont', '-family', family_hint, '-size', size, '-weight', weight, '-file', path)
+            return ctk.CTkFont(family='BrandFont', size=size, weight=weight)
+        except Exception:
+            if os.path.isfile(path) and sys.platform.startswith('win'):
+                import ctypes
+                ctypes.windll.gdi32.AddFontResourceExW(path, 16, 0)
+            return ctk.CTkFont(family=family_hint, size=size, weight=weight)
+
+    def _register_font(self, path):
+        if os.path.isfile(path) and sys.platform.startswith("win"):
+            import ctypes
+            ctypes.windll.gdi32.AddFontResourceExW(path, 16, 0)
 
     def _fade_changed(self, v):
         self.fade_secs = float(v)
         self.fade_label.configure(text=f"Fade ({int(self.fade_secs)}s)")
 
+    def _apply_fullscreen_layout(self):
+        self.wrapper.pack(fill="both", expand=True)
+        self.content.configure(width=0, height=0)
+        self.content.place(x=0, y=0, relwidth=1, relheight=1)
+
+    def _apply_windowed_layout(self):
+        self.wrapper.pack(fill="both", expand=True)
+        self.content.configure(width=WINDOW_W, height=WINDOW_H)
+        self.content.place(relx=0.5, rely=0.5, anchor="center")
+
     def _toggle_fullscreen(self):
         self.fullscreen = not self.fullscreen
         if self.fullscreen:
             self.attributes("-fullscreen", True)
-            self.content.place(relx=0.5, rely=0.5, anchor="center")
-            self.content.configure(width=WINDOW_W, height=WINDOW_H)
-            self.content.pack_propagate(True)
+            self._apply_fullscreen_layout()
         else:
             self.attributes("-fullscreen", False)
             self.geometry(f"{WINDOW_W}x{WINDOW_H}")
-            self.content.place(relx=0.5, rely=0.5, anchor="center")
-            self.content.configure(width=WINDOW_W, height=WINDOW_H)
-            self.content.pack_propagate(True)
+            self._apply_windowed_layout()
+
+    def _exit_fullscreen(self, event=None):
+        if self.fullscreen:
+            self.fullscreen = False
+            self.attributes("-fullscreen", False)
+            self.geometry(f"{WINDOW_W}x{WINDOW_H}")
+            self._apply_windowed_layout()
+
+    def _on_space(self, event=None):
+        self._toggle()
+        return "break"
 
     def _audio_init(self): pygame.mixer.init()
     def _base_folder(self):
@@ -217,8 +287,12 @@ class App(ctk.CTk):
     def _rhythms_folder(self): return self._folder(SEARCH_DIR)
     def _backing_folder(self): return self._folder(BACKING_DIR)
     def _load_rhythms(self):
-        files = [os.path.join(self._rhythms_folder(), f) for f in os.listdir(self._rhythms_folder()) if f.lower().endswith(".mp3")]
-        files.sort()
+        def nkey(p):
+            name = os.path.basename(p)
+            return [int(s) if s.isdigit() else s.lower() for s in re.split(r'(\d+)', name)]
+        folder = self._rhythms_folder()
+        files = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(".mp3")]
+        files.sort(key=nkey)
         files = files[:3]
         return [Rhythm(p) for p in files]
     def _backing_paths(self):
