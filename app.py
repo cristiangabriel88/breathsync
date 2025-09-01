@@ -203,8 +203,7 @@ class App(ctk.CTk):
             command=self._toggle,
             fg_color="#5e1eff",
             hover_color="#420b82",
-            text_color="#ffffff"
-            
+            text_color="#ffffff" 
         )
         self.play_btn.pack(pady=8)
 
